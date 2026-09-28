@@ -22,8 +22,10 @@ type bitChar struct {
 
 var set = map[string]byte{
 	"./fslash.png":     '/',
+	"./fslash-raw.png": '/',
 	"./fslash-inv.png": '/',
 	"./bslash.png":     '\\',
+	"./bslash-raw.png": '\\',
 	"./bslash-inv.png": '\\',
 	"./comma.png":      ',',
 	"./cap.png":        '^',

@@ -32,6 +32,7 @@ type model struct {
 	renderCtx *mpv.RenderContext
 	buf       []byte
 	frame     string
+	imageMode bool
 	done      bool
 }
 
@@ -41,24 +42,32 @@ const (
 	kernelHeight = kernelWidth * 2
 )
 
+var (
+	debugFile    string
+	imageTxtFile string
+	brightness   float64 = 0.1
+)
+
+func init() {
+	flag.StringVar(&debugFile, "debug", "", "path to output log file")
+	flag.StringVar(&imageTxtFile, "image", "", "render image instead of video")
+	flag.Float64Var(&brightness, "brightness", brightness, "frame brightness of video")
+}
+
 // initialModel configures libmpv with software rendering and edge-detection filters.
-func initialModel(videoPath string) (*model, error) {
+func initialModel(videoPath string, imageMode bool) (*model, error) {
 	m := mpv.New()
 	if err := m.SetOptionString("vo", "libmpv"); err != nil {
 		return nil, fmt.Errorf("failed to set vo option: %w", err)
 	}
 
-	if err := m.SetOptionString("keep-open", "yes"); err != nil {
-		return nil, fmt.Errorf("failed to set keep-open option: %w", err)
-	}
-
 	// Filter pipeline extracts structural edges and blends them back into the main video stream
 	// to improve line recognition during ASCII bitmask analysis.
-	filter := `
+	filter := fmt.Sprintf(`
 	[vid1]split[main][orig];
 	[orig]edgedetect=low=0.2:high=0.4,dilation=threshold0=255,negate,eq=gamma=0.5[edge];
-	[main][edge]blend=c0_mode=multiply,eq=brightness=0.1[vo]
-	`
+	[main][edge]blend=c0_mode=multiply,eq=brightness=%.2f[vo]
+	`, brightness)
 	if err := m.SetPropertyString("lavfi-complex", filter); err != nil {
 		return nil, fmt.Errorf("failed to set vo option: %w", err)
 	}
@@ -90,6 +99,7 @@ func initialModel(videoPath string) (*model, error) {
 		mpvClient: m,
 		renderCtx: rc,
 		buf:       buf,
+		imageMode: imageMode,
 	}, nil
 }
 
@@ -178,12 +188,16 @@ func (m *model) renderNextFrame() tea.Cmd {
 				slog.Info("mpv", "prefix", l.Prefix, "level", l.Level, "msg", l.Text)
 			}
 			if event.EventID == mpv.EventEnd {
-				return tea.QuitMsg{}
+				if m.imageMode {
+					return tea.QuitMsg{}
+				} else {
+					return nil
+				}
 			}
 		}
 
 		m.mu.Lock()
-		if m.done || m.width == 0 || m.height == 0 {
+		if m.width == 0 || m.height == 0 {
 			m.mu.Unlock()
 			return frameMsg("")
 		}
@@ -253,23 +267,25 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) View() tea.View {
+	if m.imageMode {
+		return tea.View{}
+	}
 	v := tea.NewView(m.frame)
 	v.AltScreen = true
 	return v
 }
 
 func main() {
-	debugFile := flag.String("debug", "", "path to output log file")
 	flag.Parse()
 
 	args := flag.Args()
 	if len(args) < 1 {
-		fmt.Println("Usage: go run main.go [-debug <logpath>] <videopath>")
+		fmt.Println("Usage: go run main.go [-debug <logpath>] [-image <image.txt>] <videopath>")
 		os.Exit(1)
 	}
 
-	if *debugFile != "" {
-		f, err := os.OpenFile(*debugFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
+	if debugFile != "" {
+		f, err := os.OpenFile(debugFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
 		if err != nil {
 			log.Fatalf("failed to open debug log file: %v", err)
 		}
@@ -280,7 +296,7 @@ func main() {
 		slog.SetDefault(slog.New(slog.DiscardHandler))
 	}
 
-	m, err := initialModel(args[0])
+	m, err := initialModel(args[0], imageTxtFile != "")
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -298,6 +314,18 @@ func main() {
 	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error running app: %v\n", err)
+		os.Exit(1)
+	}
+
+	if imageTxtFile == "" {
+		return
+	}
+
+	os.Stdout.WriteString(m.frame)
+
+	err = os.WriteFile(imageTxtFile, []byte(m.frame), 0o644)
+	if err != nil {
+		fmt.Printf("Error writing image: %v\n", err)
 		os.Exit(1)
 	}
 }
