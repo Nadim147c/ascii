@@ -110,11 +110,12 @@ func (m *model) Init() tea.Cmd {
 // analyzePatch converts a kernel-sized RGB pixel block into a bitmask, evaluates Hamming
 // distance against precalculated glyph masks, and computes average ANSI color values.
 func analyzePatch(buf []byte, startX, startY, stride int) (char, r, g, b byte) {
-	var i int
-	var bitmap uint64
+	const totalPixel = uint64(kernelWidth * kernelHeight)
+	var highLum, lowLum, totalLums float64
+	var lums [totalPixel]byte
 
-	totalPixel := uint64(kernelWidth * kernelHeight)
 	var rt, gt, bt uint64
+	var i int
 	for dy := range kernelHeight {
 		for dx := range kernelWidth {
 			px := startX + dx
@@ -127,10 +128,27 @@ func analyzePatch(buf []byte, startX, startY, stride int) (char, r, g, b byte) {
 			bt += uint64(b)
 
 			lum := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
-			if lum > 170.0 {
+			totalLums += lum
+			highLum = max(lum, highLum)
+			lowLum = min(lum, lowLum)
+			lums[i] = byte(lum)
+			i++
+		}
+	}
+
+	var bitmap uint64
+	if highLum-lowLum > 30 {
+		avg := byte(totalLums / float64(totalPixel))
+		for i, l := range lums {
+			if l > avg {
 				bitmap |= (1 << i)
 			}
-			i++
+		}
+	} else {
+		for i, l := range lums {
+			if l > 127 {
+				bitmap |= (1 << i)
+			}
 		}
 	}
 
@@ -148,23 +166,13 @@ func analyzePatch(buf []byte, startX, startY, stride int) (char, r, g, b byte) {
 	r, g, b = byte(rt/totalPixel), byte(gt/totalPixel), byte(bt/totalPixel)
 
 	// Dynamic fallback mapping when glyph masks map to dense or empty regions.
-	if char == '@' {
-		const lumset = ":;+*?%#@"
+	if char == '@' || char == ' ' {
+		const lumset = " .:;+*?%#@"
 		const l = float64(len(lumset))
 		lum := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
 		idx := min(math.Floor((lum/260)*l), l-1)
 		char = lumset[int(idx)]
 		return
-	}
-
-	if char == ' ' {
-		const lumset = ".:;+*"
-		const l = float64(len(lumset))
-		lum := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
-		if lum > 20 {
-			idx := min(math.Floor((lum/260)*l), l-1)
-			char = lumset[int(idx)]
-		}
 	}
 
 	return
@@ -322,7 +330,6 @@ func main() {
 	}
 
 	os.Stdout.WriteString(m.frame)
-
 	err = os.WriteFile(imageTxtFile, []byte(m.frame), 0o644)
 	if err != nil {
 		fmt.Printf("Error writing image: %v\n", err)
