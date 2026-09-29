@@ -2,7 +2,7 @@
 
 A terminal media player that converts video and images into real-time,
 full-color ASCII art. It leverages **libmpv** for decoding and edge-detection
-filtering, matching $7 \times 14$ pixel patches to character bitmasks via
+filtering, matching $5 \times 10$ pixel patches to character bitmasks via
 Hamming distance inside a TUI.
 
 ## Showcase

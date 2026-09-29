@@ -38,7 +38,7 @@ type model struct {
 
 const (
 	// Aspect ratio dimensions for pixel patch extraction.
-	kernelWidth  = 7
+	kernelWidth  = 5
 	kernelHeight = kernelWidth * 2
 )
 
