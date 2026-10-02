@@ -25,7 +25,7 @@ buildGoModule (finalAttrs: {
 
   buildInputs = [ mpv ];
 
-  vendorHash = "sha256-v+NuZId/ecmE2KR76OdHLWEisv4VtHzGdsij2wrCvgM=";
+  vendorHash = "sha256-XlW53fqmFuwubBYJuoqrNhamLhvdJtbmaSvbDHQOBzw=";
 
   excludedPackages = [ "bitmaps" ];
   ldflags = [ "-s" ];

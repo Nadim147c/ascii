@@ -20,7 +20,6 @@
           buildInputs = with pkgs; [
             go
             pkg-config
-            vhs
           ];
           nativeBuildInputs = with pkgs; [ mpv ];
           env.LD_LIBRARYPATH = lib.makeLibraryPath [ pkgs.mpv ];
