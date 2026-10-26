@@ -1,4 +1,4 @@
-// Package main processes embedded PNG glyph images to generate bitmasked
+// Package main processes embedded.txt glyph images to generate bitmasked
 // pixel representations and their corresponding ASCII characters into a
 // static Go source file.
 package main
@@ -8,7 +8,6 @@ import (
 	"embed"
 	"fmt"
 	"go/format"
-	"image/png"
 	"log"
 	"os"
 	"path/filepath"
@@ -21,26 +20,34 @@ type bitChar struct {
 }
 
 var set = map[string]byte{
-	"./fslash.png":     '/',
-	"./fslash-raw.png": '/',
-	"./fslash-inv.png": '/',
-	"./bslash.png":     '\\',
-	"./bslash-raw.png": '\\',
-	"./bslash-inv.png": '\\',
-	"./comma.png":      ',',
-	"./cap.png":        '^',
-	"./pure.png":       '@',
-	"./none.png":       ' ',
-	"./underscore.png": '_',
-	"./minus.png":      '-',
-	"./plus.png":       '+',
-	"./equal.png":      '=',
-	"./vline.png":      'a',
-	"./hline1.png":     '|',
-	"./hline2.png":     '|',
+	"./b.txt":              'b',
+	"./d.txt":              'd',
+	"./fslash.txt":         '/',
+	"./fslash-raw.txt":     '/',
+	"./fslash-raw-inv.txt": '/',
+	"./fslash-inv.txt":     '/',
+	"./bslash.txt":         '\\',
+	"./bslash2.txt":        '\\',
+	"./bslash-raw.txt":     '\\',
+	"./bslash-raw-inv.txt": '\\',
+	"./bslash-inv.txt":     '\\',
+	"./comma.txt":          ',',
+	"./cap.txt":            '^',
+	"./pure.txt":           '@',
+	"./none.txt":           ' ',
+	"./underscore.txt":     '_',
+	"./minus.txt":          '-',
+	"./minus-inv.txt":      '-',
+	"./plus.txt":           '+',
+	"./equal.txt":          '=',
+	"./vline.txt":          'a',
+	"./hline1.txt":         '|',
+	"./hline1-inv.txt":     '|',
+	"./hline2.txt":         '|',
+	"./hline2-inv.txt":     '|',
 }
 
-//go:embed *.png
+//go:embed *.txt
 var bitmaps embed.FS
 
 func main() {
@@ -51,25 +58,17 @@ func main() {
 			log.Fatal(err)
 		}
 
-		b, err := bitmaps.ReadFile(rel)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		img, err := png.Decode(bytes.NewReader(b))
+		buf, err := bitmaps.ReadFile(rel)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		var i int
-
 		var bitmap uint64
 
 		for x := range 5 {
 			for y := range 10 {
-				c := img.At(x, y)
-				r, _, _, _ := c.RGBA()
-				if byte(r) > 127 {
+				if buf[x+y*6] == '1' {
 					bitmap |= (1 << i)
 				}
 				i++

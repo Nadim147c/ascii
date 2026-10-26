@@ -74,6 +74,11 @@ func initialModel(videoPath string) (*model, error) {
 		return nil, fmt.Errorf("failed to set vo option: %w", err)
 	}
 
+	err := m.SetOptionString("sub-visibility", "no")
+	if err != nil {
+		return nil, err
+	}
+
 	if !skipFilter {
 		// Filter pipeline extracts structural edges and blends them back into the main video stream
 		// to improve line recognition during ASCII bitmask analysis.
@@ -123,68 +128,80 @@ func (m *model) Init() tea.Cmd {
 
 // analyzePatch converts a kernel-sized RGB pixel block into a bitmask, evaluates Hamming
 // distance against precalculated glyph masks, and computes average ANSI color values.
-func analyzePatch(buf []byte, startX, startY, stride int) (char, r, g, b byte) {
-	const totalPixel = uint64(kernelWidth * kernelHeight)
-	var highLum, lowLum, totalLums float64
-	var lums [totalPixel]byte
-
+func analyzePatch(buf []byte, startX, startY, stride int) (char byte, r, g, b byte) {
+	const totalPixel = float64(kernelWidth * kernelHeight)
 	var rt, gt, bt uint64
+	var totalLum float64
+	var lums [kernelWidth * kernelHeight]byte
+
 	var i int
 	for dy := range kernelHeight {
 		for dx := range kernelWidth {
 			px := startX + dx
 			py := startY + dy
 			offset := (py * stride) + (px * 4)
-			r, g, b := buf[offset], buf[offset+1], buf[offset+2]
 
-			rt += uint64(r)
-			gt += uint64(g)
-			bt += uint64(b)
+			rv := buf[offset]
+			gv := buf[offset+1]
+			bv := buf[offset+2]
 
-			lum := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
-			totalLums += lum
-			highLum = max(lum, highLum)
-			lowLum = min(lum, lowLum)
+			rt += uint64(rv)
+			gt += uint64(gv)
+			bt += uint64(bv)
+
+			lum := 0.299*float64(rv) + 0.587*float64(gv) + 0.114*float64(bv)
+			totalLum += lum
 			lums[i] = byte(lum)
 			i++
 		}
 	}
 
+	mean := totalLum / totalPixel
+	var variance float64
+	for _, l := range lums {
+		diff := float64(l) - mean
+		variance += diff * diff
+	}
+	variance /= totalPixel
+
 	var bitmap uint64
-	if highLum-lowLum > edgeThreshold {
-		avg := byte(totalLums / float64(totalPixel))
-		for i, l := range lums {
+	const thresholdSq float64 = edgeThreshold * edgeThreshold
+
+	if variance > thresholdSq {
+		avg := byte(mean)
+		for j, l := range lums {
 			if l > avg {
-				bitmap |= (1 << i)
+				bitmap |= (1 << j)
 			}
 		}
 	} else {
-		for i, l := range lums {
+		for j, l := range lums {
 			if l > 127 {
-				bitmap |= (1 << i)
+				bitmap |= (1 << j)
 			}
 		}
 	}
 
-	diff := kernelWidth * kernelHeight
+	diffCount := int(totalPixel)
 	char = ' '
 
-	for i := range bitmaps {
-		newDiff := bits.OnesCount64(bitmaps[i] ^ bitmap)
-		if newDiff < diff {
-			diff = newDiff
-			char = chars[i]
+	for j := range bitmaps {
+		newDiff := bits.OnesCount64(bitmaps[j] ^ bitmap)
+		if newDiff < diffCount {
+			diffCount = newDiff
+			char = chars[j]
 		}
 	}
 
-	r, g, b = byte(rt/totalPixel), byte(gt/totalPixel), byte(bt/totalPixel)
+	r = byte(rt / uint64(totalPixel))
+	g = byte(gt / uint64(totalPixel))
+	b = byte(bt / uint64(totalPixel))
 
-	// Dynamic fallback mapping when glyph masks map to dense or empty regions.
 	if char == '@' || char == ' ' {
 		const lumset = " .:;+*?%#@"
-		const l = float64(len(lumset))
-		lum := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
-		idx := min(math.Floor((lum/260)*l), l-1)
+		const lLen = float64(len(lumset))
+		lumVal := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
+		idx := min(math.Floor((lumVal/260)*lLen), lLen-1)
 		char = lumset[int(idx)]
 		return
 	}
